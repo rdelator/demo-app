@@ -16,16 +16,18 @@ phases:
       - echo Configuring access to EKS...
       - export AWS_REGION=us-east-1
       - export AWS_DEFAULT_REGION=us-east-1
+      - export KUBECONFIG=$HOME/.kube/config
+      - mkdir -p $HOME/.kube
       - aws sts get-caller-identity
       - aws eks update-kubeconfig --region us-east-1 --name demo-cluster
 
   build:
     commands:
-      - echo Triggering rollout restart...
+      - echo Testing cluster access...
       - kubectl get nodes
+      - echo Restarting deployment...
       - kubectl rollout restart deployment/demo-app
       - kubectl rollout status deployment/demo-app
-      # Generate dummy imagedefinitions.json to satisfy CodePipeline artifact requirement
       - echo '[{"name":"demo-app","imageUri":"dummy"}]' > imagedefinitions.json
 
 artifacts:
