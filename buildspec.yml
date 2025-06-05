@@ -1,3 +1,5 @@
+version: 0.2
+
 phases:
   install:
     runtime-versions:
@@ -23,3 +25,9 @@ phases:
       - kubectl get nodes
       - kubectl rollout restart deployment/demo-app
       - kubectl rollout status deployment/demo-app
+      # Generate dummy imagedefinitions.json to satisfy CodePipeline artifact requirement
+      - echo '[{"name":"demo-app","imageUri":"dummy"}]' > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
