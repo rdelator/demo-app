@@ -1,25 +1,26 @@
 version: 0.2
 
-############################
-#  Global build variables  #
-############################
+########################
+# Global build config  #
+########################
 env:
   variables:
-    AWS_REGION:    us-east-1
-    ACCOUNT_ID:    "445567078150"
-    REPO_NAME:     demo-app
-    CLUSTER_NAME:  demo-cluster
-  exported-variables:
-    - IMAGE_TAG        # <-- will be set in pre_build and reused everywhere
+    AWS_REGION:      us-east-1
+    ACCOUNT_ID:      "445567078150"
+    REPO_NAME:       demo-app
+    CLUSTER_NAME:    demo-cluster
+  exported-variables:   # ← tells CodeBuild to carry these across phases
+    - IMAGE_TAG
+    - IMAGE_URI
 
-############################
-#  Build phases           #
-############################
+########################
+# Build phases         #
+########################
 phases:
 
   install:
     runtime-versions:
-      python: 3.11               # optional; remove if unused
+      python: 3.11             # remove if unused
     commands:
       - yum install -y docker
       - service docker start
@@ -33,30 +34,31 @@ phases:
       - aws ecr get-login-password --region $AWS_REGION \
           | docker login --username AWS --password-stdin \
             $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-      # Derive a unique tag from the commit SHA
+      # 👉 **export** so later phases inherit the value
       - export IMAGE_TAG=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
-      - echo "🏷️  IMAGE_TAG=${IMAGE_TAG}"
+      - export IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME:$IMAGE_TAG
+      - echo "🏷️  Using IMAGE_TAG=$IMAGE_TAG"
 
   build:
     commands:
-      - IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME:$IMAGE_TAG
       - echo "🐳  Building $IMAGE_URI …"
       - docker build --no-cache -t "$IMAGE_URI" .
       - docker push "$IMAGE_URI"
 
   post_build:
     commands:
-      - echo "☸️  Updating deployment in EKS…"
+      - echo "☸️  Rolling out $IMAGE_URI to EKS…"
       - aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
       - kubectl set image deployment/demo-app \
-          demo-app=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME:$IMAGE_TAG \
-          --namespace default --record
-      - kubectl rollout status deployment/demo-app --namespace default
-      - echo "✅  Build and deployment finished."
+          demo-app="$IMAGE_URI" --record
+      # In case someone ever reverts to ':latest', force a restart
+      - kubectl rollout restart deployment/demo-app
+      - kubectl rollout status deployment/demo-app
+      - echo "✅  Deployment complete."
 
-############################
-#  Artifacts (optional)    #
-############################
+########################
+# (Optional) artifacts #
+########################
 artifacts:
   files:
-    - imagedefinitions.json   # remove if you don’t use this elsewhere
+    - imagedefinitions.json
