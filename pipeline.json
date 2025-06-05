@@ -1,0 +1,147 @@
+{
+    "pipeline": {
+        "name": "SimpleDockerService",
+        "roleArn": "arn:aws:iam::445567078150:role/CodePipelineStarterTemplate-PushTo-CodePipelineRole-B0BE78bDEftz",
+        "artifactStore": {
+            "type": "S3",
+            "location": "codepipelinestartertempla-codepipelineartifactsbuc-cdfevyq6fwkr"
+        },
+        "stages": [
+            {
+                "name": "Source",
+                "actions": [
+                    {
+                        "name": "CodeConnections",
+                        "actionTypeId": {
+                            "category": "Source",
+                            "owner": "AWS",
+                            "provider": "CodeStarSourceConnection",
+                            "version": "1"
+                        },
+                        "runOrder": 1,
+                        "configuration": {
+                            "BranchName": "main",
+                            "ConnectionArn": "arn:aws:codeconnections:us-east-1:445567078150:connection/d9c42c0c-7af7-4e52-a9d1-e275a9da7274",
+                            "FullRepositoryId": "rdelator/demo-app",
+                            "OutputArtifactFormat": "CODE_ZIP"
+                        },
+                        "outputArtifacts": [
+                            {
+                                "name": "SourceOutput"
+                            }
+                        ],
+                        "inputArtifacts": [],
+                        "region": "us-east-1"
+                    }
+                ],
+                "onFailure": {
+                    "result": "RETRY",
+                    "retryConfiguration": {
+                        "retryMode": "ALL_ACTIONS"
+                    }
+                }
+            },
+            {
+                "name": "Build_and_Deploy",
+                "actions": [
+                    {
+                        "name": "Docker_Build_Tag_and_Push",
+                        "actionTypeId": {
+                            "category": "Build",
+                            "owner": "AWS",
+                            "provider": "CodeBuild",
+                            "version": "1"
+                        },
+                        "runOrder": 1,
+                        "configuration": {
+                            "ProjectName": "SimpleDockerProject-0e45265c229d"
+                        },
+                        "outputArtifacts": [],
+                        "inputArtifacts": [
+                            {
+                                "name": "SourceOutput"
+                            }
+                        ],
+                        "roleArn": "arn:aws:iam::445567078150:role/CodePipelineStarterTemplate-Pus-CodeBuildActionRole-6TjSwoKBmhYJ"
+                    }
+                ],
+                "onFailure": {
+                    "result": "ROLLBACK"
+                },
+                "beforeEntry": {
+                    "conditions": [
+                        {
+                            "result": "FAIL",
+                            "rules": [
+                                {
+                                    "name": "MyDeploymentWindowRule",
+                                    "ruleTypeId": {
+                                        "category": "Rule",
+                                        "owner": "AWS",
+                                        "provider": "DeploymentWindow",
+                                        "version": "1"
+                                    },
+                                    "configuration": {
+                                        "Cron": "* * * * * ? *",
+                                        "TimeZone": "PST"
+                                    },
+                                    "inputArtifacts": []
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "DeployToEKS",
+                "actions": [
+                    {
+                        "name": "Deploy",
+                        "actionTypeId": {
+                            "category": "Build",
+                            "owner": "AWS",
+                            "provider": "CodeBuild",
+                            "version": "1"
+                        },
+                        "runOrder": 1,
+                        "configuration": {
+                            "ProjectName": "demo-app-deploy-to-eks"
+                        },
+                        "outputArtifacts": [],
+                        "inputArtifacts": [
+                            {
+                                "name": "SourceOutput"
+                            }
+                        ],
+                        "region": "us-east-1"
+                    }
+                ]
+            }
+        ],
+        "version": 7,
+        "executionMode": "QUEUED",
+        "pipelineType": "V2",
+        "triggers": [
+            {
+                "providerType": "CodeStarSourceConnection",
+                "gitConfiguration": {
+                    "sourceActionName": "CodeConnections",
+                    "push": [
+                        {
+                            "branches": {
+                                "includes": [
+                                    "main"
+                                ]
+                            },
+                            "filePaths": {
+                                "includes": [
+                                    ".*"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}
