@@ -7,9 +7,7 @@ phases:
     commands:
       - echo Installing kubectl...
       - curl -LO "https://dl.k8s.io/release/v1.30.1/bin/linux/amd64/kubectl"
-      - chmod +x kubectl
-      - mv kubectl /usr/local/bin/
-      - kubectl version --client
+      - chmod +x kubectl && mv kubectl /usr/local/bin/
       - echo Installing Docker...
       - yum install -y docker
       - service docker start
@@ -18,27 +16,17 @@ phases:
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
-      - |
-        aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 445567078150.dkr.ecr.us-east-1.amazonaws.com
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 445567078150.dkr.ecr.us-east-1.amazonaws.com
       - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - REPOSITORY_URI=445567078150.dkr.ecr.us-east-1.amazonaws.com/demo-app
-      - echo Configuring access to EKS...
-      - export AWS_REGION=us-east-1
-      - export AWS_DEFAULT_REGION=us-east-1
-      - export KUBECONFIG=$HOME/.kube/config
-      - mkdir -p $HOME/.kube
-      - aws eks update-kubeconfig --region $AWS_REGION --name demo-cluster
-      - aws sts get-caller-identity
 
   build:
     commands:
       - echo Building Docker image...
-      - docker build --no-cache -t $REPOSITORY_URI:$IMAGE_TAG .
-      - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
-      - echo Pushing Docker image to Amazon ECR...
+      - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
       - docker push $REPOSITORY_URI:$IMAGE_TAG
-      - docker push $REPOSITORY_URI:latest
-      - echo Deploying updated image to EKS...
+      - echo Updating image in Kubernetes...
+      - aws eks update-kubeconfig --region us-east-1 --name demo-cluster
       - kubectl set image deployment/demo-app demo-app=$REPOSITORY_URI:$IMAGE_TAG
       - kubectl rollout status deployment/demo-app
 
@@ -48,4 +36,4 @@ phases:
 
 artifacts:
   files:
-    - imagedefinitions.json  # (optional, unused in EKS, can be removed)
+    - imagedefinitions.json  # optional
