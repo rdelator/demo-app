@@ -10,9 +10,17 @@ phases:
       - chmod +x kubectl
       - mv kubectl /usr/local/bin/
       - kubectl version --client
+      - echo Installing Docker...
+      - yum install -y docker
+      - service docker start
+      - systemctl enable docker
 
   pre_build:
     commands:
+      - echo Logging in to Amazon ECR...
+      - $(aws ecr get-login --no-include-email --region us-east-1)
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - REPOSITORY_URI=445567078150.dkr.ecr.us-east-1.amazonaws.com/demo-app
       - echo Configuring access to EKS...
       - export AWS_REGION=us-east-1
       - export AWS_DEFAULT_REGION=us-east-1
@@ -23,13 +31,20 @@ phases:
 
   build:
     commands:
-      - echo Testing cluster access...
-      - kubectl get nodes
+      - echo Building Docker image...
+      - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
+      - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
+      - echo Pushing Docker image to ECR...
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - docker push $REPOSITORY_URI:latest
       - echo Restarting deployment...
       - kubectl rollout restart deployment/demo-app
       - kubectl rollout status deployment/demo-app
-      - echo Generating imagedefinitions.json...
-      - echo '[{"name":"demo-app","imageUri":"dummy"}]' > imagedefinitions.json
+
+  post_build:
+    commands:
+      - echo Creating imagedefinitions.json...
+      - printf '[{"name":"demo-app","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
 
 artifacts:
   files:
