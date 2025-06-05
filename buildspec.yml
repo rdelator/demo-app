@@ -1,46 +1,65 @@
+# ---------- buildspec.yml ----------
+# Builds a Docker image, pushes it to ECR, then rolls the “demo-app”
+# Deployment in an EKS cluster named “demo-cluster”.
+# Tested on CodeBuild image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+# Requires: CodeBuild project *privileged mode* = true.
+
 version: 0.2
 
 env:
   variables:
+    # Change only these four if your repo/cluster names differ
     AWS_REGION:   us-east-1
-    ACCOUNT_ID:   "445567078150"
-    REPO_NAME:    demo-app
+    REPO_NAME:    demo-app          # also the K8s deployment/container name
     CLUSTER_NAME: demo-cluster
-  exported-variables:
-    - IMAGE_TAG
+  exported-variables:               # needed in later phases
     - IMAGE_URI
 
 phases:
-  # ---------- install ----------
+  # ---------- 1. install ----------
   install:
+    # “Standard 5.0” AL2 images ship *docker* binaries but the daemon is off.
     commands:
-      - echo "🔧  Starting Docker daemon..."
-      - nohup /usr/bin/dockerd --host=unix:///var/run/docker.sock &
-      - timeout 30 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+      - echo "🔧 Starting Docker daemon ..."
+      - nohup /usr/bin/dockerd --host=unix:///var/run/docker.sock &> /tmp/dockerd.log &
+      - timeout 30 sh -c 'until docker info >/dev/null 2>&1; do sleep 2; done'
+      - echo "✅ Docker is up"
+      # Light-weight kubectl download (latest stable)
+      - curl -sLo /usr/local/bin/kubectl \
+        https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
+      - chmod +x /usr/local/bin/kubectl
 
-  # ---------- pre_build ----------
+  # ---------- 2. pre_build ----------
   pre_build:
     commands:
-      - echo "🔑  Logging in to ECR..."
+      - echo "🔑 Logging in to Amazon ECR ..."
+      - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - REPOSITORY_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME
       - aws ecr get-login-password --region $AWS_REGION | \
-        docker login --username AWS --password-stdin \
-        $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-      - export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
-      - export IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME:$IMAGE_TAG
-      - echo "🏷️  IMAGE_TAG=$IMAGE_TAG"
+        docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      # Short commit SHA = deterministic, unique tag
+      - IMAGE_TAG=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
+      - export IMAGE_URI=$REPOSITORY_URI:$IMAGE_TAG
+      - echo "🏷️  Using image tag $IMAGE_TAG"
 
-  # ---------- build ----------
+  # ---------- 3. build ----------
   build:
     commands:
-      - docker build --no-cache -t $IMAGE_URI .
+      - echo "🐳 Building and pushing $IMAGE_URI ..."
+      - docker build --pull --no-cache -t $IMAGE_URI .
       - docker push $IMAGE_URI
 
-  # ---------- post_build ----------
+  # ---------- 4. post_build ----------
   post_build:
     commands:
-      - echo "☸️  Rolling out to EKS..."
+      - echo "☸️  Rolling out to EKS ..."
       - aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
       - kubectl set image deployment/$REPO_NAME \
           $REPO_NAME=$IMAGE_URI --record
       - kubectl rollout status deployment/$REPO_NAME
-      - echo "✅  Build and deployment complete"
+      - echo "✅ Deployment completed"
+
+# No artifacts — image is the only output.
+artifacts:
+  files: []
+# ---------- end of buildspec.yml ----------
