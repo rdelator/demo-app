@@ -34,7 +34,7 @@ phases:
           | docker login --username AWS --password-stdin \
             $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
       # Derive a unique tag from the commit SHA
-      - IMAGE_TAG=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
+      - export IMAGE_TAG=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
       - echo "🏷️  IMAGE_TAG=${IMAGE_TAG}"
 
   build:
