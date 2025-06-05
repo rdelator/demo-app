@@ -4,33 +4,38 @@ env:
   variables:
     AWS_REGION:   us-east-1
     ACCOUNT_ID:   "445567078150"
-    REPO_NAME:    demo-app            # also the container name in Kubernetes
+    REPO_NAME:    demo-app
     CLUSTER_NAME: demo-cluster
   exported-variables:
     - IMAGE_TAG
     - IMAGE_URI
 
 phases:
-  install:               # nothing to do – Docker is ready to go
-    commands: []
+  # ---------- install ----------
+  install:
+    commands:
+      - echo "🔧  Starting Docker daemon..."
+      - nohup /usr/bin/dockerd --host=unix:///var/run/docker.sock &
+      - timeout 30 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 
+  # ---------- pre_build ----------
   pre_build:
     commands:
       - echo "🔑  Logging in to ECR..."
       - aws ecr get-login-password --region $AWS_REGION | \
         docker login --username AWS --password-stdin \
         $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-
-      # first 7 chars of the commit SHA = unique image tag
       - export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
       - export IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME:$IMAGE_TAG
       - echo "🏷️  IMAGE_TAG=$IMAGE_TAG"
 
+  # ---------- build ----------
   build:
     commands:
       - docker build --no-cache -t $IMAGE_URI .
       - docker push $IMAGE_URI
 
+  # ---------- post_build ----------
   post_build:
     commands:
       - echo "☸️  Rolling out to EKS..."
