@@ -11,14 +11,14 @@ env:
     - IMAGE_URI
 
 phases:
-  install:           # nothing to do – CodeBuild managed image has Docker running
+  install:        # Docker already available → nothing to do
     commands: []
 
   pre_build:
     commands:
       - echo "🔑  Logging in to ECR…"
-      - aws ecr get-login-password --region $AWS_REGION | \
-          docker login --username AWS --password-stdin \
+      - aws ecr get-login-password --region $AWS_REGION \
+          | docker login --username AWS --password-stdin \
             $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
       - export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
       - export IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME:$IMAGE_TAG
