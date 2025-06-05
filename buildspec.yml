@@ -18,7 +18,8 @@ phases:
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
-      - $(aws ecr get-login --no-include-email --region us-east-1)
+      - |
+        aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 445567078150.dkr.ecr.us-east-1.amazonaws.com
       - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - REPOSITORY_URI=445567078150.dkr.ecr.us-east-1.amazonaws.com/demo-app
       - echo Configuring access to EKS...
@@ -34,18 +35,17 @@ phases:
       - echo Building Docker image...
       - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
       - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
-      - echo Pushing Docker image to ECR...
+      - echo Pushing Docker image to Amazon ECR...
       - docker push $REPOSITORY_URI:$IMAGE_TAG
       - docker push $REPOSITORY_URI:latest
-      - echo Restarting deployment...
-      - kubectl rollout restart deployment/demo-app
+      - echo Deploying updated image to EKS...
+      - kubectl set image deployment/demo-app demo-app=$REPOSITORY_URI:$IMAGE_TAG
       - kubectl rollout status deployment/demo-app
 
   post_build:
     commands:
-      - echo Creating imagedefinitions.json...
-      - printf '[{"name":"demo-app","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+      - echo Build and deployment completed successfully.
 
 artifacts:
   files:
-    - imagedefinitions.json
+    - imagedefinitions.json  # (optional, unused in EKS, can be removed)
