@@ -1,31 +1,43 @@
 version: 0.2
+
 phases:
   install:
     runtime-versions:
-      python: 3.11
+      python: 3.11             # just to get pip if you ever need it
     commands:
+      # Docker daemon + kubectl (v1.30.1 — current at 2025-06-05)
       - yum install -y docker
       - service docker start
-      - curl -LO "https://dl.k8s.io/release/v1.30.1/bin/linux/amd64/kubectl"
-      - chmod +x kubectl && mv kubectl /usr/local/bin/
+      - curl -Lo /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.1/bin/linux/amd64/kubectl
+      - chmod +x /usr/local/bin/kubectl
 
   pre_build:
     commands:
-      - echo "🔑  Logging in to ECR..."
+      - echo "🔑  Logging in to Amazon ECR..."
       - aws ecr get-login-password --region us-east-1 \
           | docker login --username AWS --password-stdin 445567078150.dkr.ecr.us-east-1.amazonaws.com
-      - **export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)**
-      - **export REPOSITORY_URI=445567078150.dkr.ecr.us-east-1.amazonaws.com/demo-app**
+
+      # Use the first 7 chars of the commit SHA as the image tag
+      - export IMAGE_TAG=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
+      - export REPOSITORY_URI=445567078150.dkr.ecr.us-east-1.amazonaws.com/demo-app
+      - echo "🆕  IMAGE_TAG set to $IMAGE_TAG"
 
   build:
     commands:
-      - **echo "🍰  Using IMAGE_TAG=$IMAGE_TAG"**
-      - docker build --no-cache -t $REPOSITORY_URI:$IMAGE_TAG .
-      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - echo "🐳  Building $REPOSITORY_URI:$IMAGE_TAG ..."
+      - docker build --no-cache -t "$REPOSITORY_URI:$IMAGE_TAG" .
+      - docker push "$REPOSITORY_URI:$IMAGE_TAG"
+
+      - echo "☸️  Deploying to EKS..."
       - aws eks update-kubeconfig --region us-east-1 --name demo-cluster
-      - kubectl set image deployment/demo-app demo-app=$REPOSITORY_URI:$IMAGE_TAG --record
+      - kubectl set image deployment/demo-app \
+          demo-app="$REPOSITORY_URI:$IMAGE_TAG" --record
       - kubectl rollout status deployment/demo-app
 
-post_build:
-  commands:
-    - echo "✅  Build and deployment completed."
+  post_build:
+    commands:
+      - echo "✅  Build and deployment completed."
+
+artifacts:
+  files:
+    - imagedefinitions.json      # optional; safe to remove if unused
