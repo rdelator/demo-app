@@ -1,20 +1,14 @@
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements and install
+# Add this line first to cache dependencies properly
 COPY requirements.txt .
+
 RUN pip install -r requirements.txt
 
-# Copy app code
+# Then copy everything else (this will trigger rebuild on changes)
 COPY . .
 
-# (Optional) Print directory contents for debugging
-# RUN ls -la /app/templates
-
-# Expose port
-EXPOSE 5000
-
-# Run app
+EXPOSE 8080
 CMD ["python", "app.py"]
