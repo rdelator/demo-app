@@ -1,37 +1,73 @@
 version: 0.2
 
+################################
+#  Global environment values   #
+################################
 env:
   variables:
     AWS_REGION:   us-east-1
     ACCOUNT_ID:   "445567078150"
-    REPO_NAME:    demo-app
+    REPO_NAME:    demo-app            # also the Kubernetes container name
     CLUSTER_NAME: demo-cluster
-  exported-variables:
+  exported-variables:                # make them available in later phases
     - IMAGE_TAG
     - IMAGE_URI
 
+################################
+#  Build phases                #
+################################
 phases:
-  install:        # Docker already available → nothing to do
-    commands: []
 
+  # 1. Bring Docker + kubectl to the AL2023 build container
+  install:
+    runtime-versions:
+      python: 3.11                  # optional, remove if unused
+    commands:
+      - echo "🔧 Installing Docker engine..."
+      - yum install -y docker
+      # Start the daemon manually (no systemd inside CodeBuild)
+      - nohup /usr/bin/dockerd --host=unix:///var/run/docker.sock &
+      # Wait until it is ready
+      - timeout 30 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+
+      - echo "⬇️  Installing kubectl..."
+      - curl -Lo /usr/local/bin/kubectl \
+          https://dl.k8s.io/release/v1.30.1/bin/linux/amd64/kubectl
+      - chmod +x /usr/local/bin/kubectl
+
+  # 2. Log in to ECR and compute unique image tag
   pre_build:
     commands:
-      - echo "🔑  Logging in to ECR…"
-      - aws ecr get-login-password --region $AWS_REGION \
-          | docker login --username AWS --password-stdin \
-            $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-      - export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
+      - echo "🔑  Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_REGION | \
+        docker login --username AWS --password-stdin \
+        $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+      # Use the first 7 chars of the commit SHA as the tag
+      - export IMAGE_TAG=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
       - export IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME:$IMAGE_TAG
       - echo "🏷️  IMAGE_TAG=$IMAGE_TAG"
 
+  # 3. Build & push the container image
   build:
     commands:
-      - docker build --no-cache -t $IMAGE_URI .
-      - docker push  $IMAGE_URI
+      - echo "🐳  Building image $IMAGE_URI ..."
+      - docker build --no-cache -t "$IMAGE_URI" .
+      - docker push "$IMAGE_URI"
 
+  # 4. Update the running Deployment in EKS
   post_build:
     commands:
+      - echo "☸️  Updating deployment in EKS..."
       - aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
-      - kubectl set image deployment/demo-app demo-app=$IMAGE_URI --record
-      - kubectl rollout status deployment/demo-app
-      - echo "✅  Deployment complete"
+      - kubectl set image deployment/$REPO_NAME \
+          $REPO_NAME="$IMAGE_URI" --record
+      - kubectl rollout status deployment/$REPO_NAME
+      - echo "✅  Build and deployment complete"
+
+################################
+#  (Optional) artifacts block  #
+################################
+artifacts:
+  files:
+    - imagedefinitions.json          # safe to remove if unused
