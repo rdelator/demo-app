@@ -18,8 +18,8 @@ phases:
       - export AWS_DEFAULT_REGION=us-east-1
       - export KUBECONFIG=$HOME/.kube/config
       - mkdir -p $HOME/.kube
+      - aws eks update-kubeconfig --region $AWS_REGION --name demo-cluster
       - aws sts get-caller-identity
-      - aws eks update-kubeconfig --region us-east-1 --name demo-cluster
 
   build:
     commands:
@@ -28,6 +28,7 @@ phases:
       - echo Restarting deployment...
       - kubectl rollout restart deployment/demo-app
       - kubectl rollout status deployment/demo-app
+      - echo Generating imagedefinitions.json...
       - echo '[{"name":"demo-app","imageUri":"dummy"}]' > imagedefinitions.json
 
 artifacts:
