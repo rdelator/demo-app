@@ -1,6 +1,5 @@
-from flask import Flask, jsonify, render_template
 import time
-import threading
+from flask import Flask, jsonify, render_template
 
 app = Flask(__name__)
 
@@ -14,22 +13,11 @@ def api():
 
 @app.route("/load")
 def load():
-    # Run CPU-bound task in a blocking way for 5 seconds
-    def cpu_stress():
-        end_time = time.time() + 5
-        while time.time() < end_time:
-            _ = sum(i*i for i in range(10000))  # Simple heavy loop
-
-    threads = []
-    for _ in range(4):  # Adjust this number based on vCPU count
-        t = threading.Thread(target=cpu_stress)
-        t.start()
-        threads.append(t)
-
-    for t in threads:
-        t.join()
-
-    return jsonify(message="CPU stress generated")
+    # Artificial CPU load for ~2 seconds
+    end = time.time() + 2.0
+    while time.time() < end:
+        _ = sum(i * i for i in range(10000))
+    return "Load test done"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
