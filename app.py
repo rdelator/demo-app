@@ -1,5 +1,6 @@
 import time
 import threading
+import os
 from flask import Flask, jsonify, render_template
 
 app = Flask(__name__)
@@ -14,21 +15,25 @@ def api():
 
 @app.route("/load")
 def load():
-    def burn_cpu():
-        end = time.time() + 10  # Increase duration for stress
+    def burn():
+        end = time.time() + 30  # Load duration in seconds
         while time.time() < end:
-            _ = sum(i * i for i in range(1000000))  # Heavy calculation
+            x = 0
+            for i in range(10**6):
+                x += i ** 2  # Tight CPU-bound loop
 
+    num_threads = os.cpu_count() or 4  # Use number of available CPU cores
     threads = []
-    for _ in range(4):  # Run 4 threads to stress multiple cores
-        t = threading.Thread(target=burn_cpu)
+
+    for _ in range(num_threads):
+        t = threading.Thread(target=burn)
         t.start()
         threads.append(t)
 
     for t in threads:
         t.join()
 
-    return "🔥 Maximum CPU load generated!"
+    return f"🔥 Heavy load generated on {num_threads} threads for 30s."
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
